@@ -1,3 +1,4 @@
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { SourceAnchor } from "./sourceAnchor";
 
 const SIDECAR_PREFIX = "odu.sidecar.v1.";
@@ -98,11 +99,25 @@ export function parseDocumentSidecar(value: string): DocumentSidecar | null {
   }
 }
 
-export function loadDocumentSidecar(documentSha256: string): DocumentSidecar | null {
+export async function loadDocumentSidecar(documentSha256: string): Promise<DocumentSidecar | null> {
+  if (isTauri()) {
+    const raw = await invoke<string | null>("load_sidecar", { documentSha256 });
+    return raw ? parseDocumentSidecar(raw) : null;
+  }
+
   const raw = localStorage.getItem(sidecarStorageKey(documentSha256));
   return raw ? parseDocumentSidecar(raw) : null;
 }
 
-export function saveDocumentSidecar(sidecar: DocumentSidecar): void {
-  localStorage.setItem(sidecarStorageKey(sidecar.document.sha256), JSON.stringify(sidecar));
+export async function saveDocumentSidecar(sidecar: DocumentSidecar): Promise<void> {
+  const serialized = JSON.stringify(sidecar, null, 2);
+  if (isTauri()) {
+    await invoke("save_sidecar", {
+      documentSha256: sidecar.document.sha256,
+      contents: serialized
+    });
+    return;
+  }
+
+  localStorage.setItem(sidecarStorageKey(sidecar.document.sha256), serialized);
 }
