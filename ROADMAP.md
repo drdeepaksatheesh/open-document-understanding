@@ -35,35 +35,60 @@ Completed and clean-machine validated on Windows:
 - validated Windows installer checksum manifest;
 - clean-machine persistence validation.
 
-## v0.1a — Local Hindi reference intelligence (current)
+## v0.1a — Local Hindi reference intelligence ✅
 
 Goal: prove the complete local-generation lifecycle without coupling it to a heavyweight model runtime.
+
+Completed:
 
 - deterministic built-in Hindi reference engine;
 - Translate and Simple Explain operations;
 - medical, administrative and safety regression passages;
 - explicit `unsupported` behavior for unknown text;
 - generated-output sidecar records with language, level and engine provenance;
-- externally-verified and human-reviewed states remain explicit and false by default;
+- externally-verified and human-reviewed states explicit and false by default;
 - saved generated outputs restore when the same source is reopened;
+- PDF text-layer spacing regression hardened;
 - no runtime network path added;
-- Windows installer and CI validation retained.
+- clean Windows GUI validation completed.
 
-Exit criterion: a supported English passage can be translated and explained in Hindi locally, each output is separately persisted with its exact source anchor and engine provenance, and the output survives restart/reopen. Unknown passages must be rejected rather than fabricated.
+## v0.1b — Real offline Hindi translation model boundary (current)
+
+Goal: replace the normal Translate path with a secure installable model-pack/provider boundary before adding heavyweight model files.
+
+Phase 1:
+
+- `TranslationProvider` abstraction;
+- reference translator retained for regression/dev use but removed as automatic normal-user fallback;
+- separate model-pack schema;
+- local model-pack directory import;
+- SHA-256 validation of every declared pack file;
+- relative-path/path-traversal protection;
+- model-pack discovery under application data;
+- explicit no-pack and runtime-not-connected states;
+- SourceAnchor, GeneratedRecord and document-sidecar schemas unchanged.
+
+Phase 2:
+
+- local JSON-lines translation worker protocol;
+- packaged CPU Windows worker;
+- pinned AI4Bharat IndicTrans2 En-Indic distilled 200M model revision;
+- arbitrary unseen English -> Hindi translation;
+- existing provenance mapping and sidecar persistence;
+- internet-disconnected clean-machine test.
+
+Exit criterion: a normal Windows user can install the app and validated Hindi model pack, select an arbitrary English sentence in a local PDF, translate it into Hindi with internet disabled, and restore the generated record after restarting the app.
 
 ## v0.1 — First production local understanding loop
 
-- replace the reference engine behind the same contract with a distributable local model/runtime;
-- English -> Hindi general translation vertical slice;
 - local explanation engine beyond the fixed regression catalog;
 - document-grounded Ask mode;
 - clear provenance labels for Translate / Explain / Ask;
 - no document upload required;
-- model pack manifest and installation path;
 - CPU-only Windows benchmark and memory/latency targets;
 - model/runtime license documentation.
 
-Exit criterion: a normal Windows user can install the app + required model pack and use Translate, Explain and Ask on a local English PDF without internet access.
+Exit criterion: a normal Windows user can install the app + required model packs and use Translate, Explain and Ask on a local English PDF without internet access.
 
 ## v0.2 — Medical science pack
 
