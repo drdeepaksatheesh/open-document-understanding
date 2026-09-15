@@ -25,17 +25,20 @@ Desktop application
 │   └── document retrieval
 ├── Persistence
 │   ├── settings
+│   ├── durable per-document sidecars
 │   ├── model metadata
-│   └── reversible sidecar annotations
+│   └── reversible annotations/provenance
 └── Optional network verifier
     └── explicit outbound requests only
 ```
 
 ## Application shell
 
-The planned desktop shell is Tauri 2 with a TypeScript/React front end. This gives the project a modern document interface while preserving a native desktop packaging path.
+The desktop shell is Tauri 2 with a TypeScript/React front end. This gives the project a modern document interface while preserving a native desktop packaging path.
 
-PDF rendering should use PDF.js or an equivalent permissively licensed renderer suitable for selectable-text overlays.
+PDF rendering uses PDF.js with a canvas plus selectable text overlay.
+
+The application UI supports persistent Light/Dark mode. The rendered PDF itself is not recolored or rewritten by theme changes; dark mode changes only the reader chrome/background so the document remains visually faithful.
 
 ## Local engine
 
@@ -53,33 +56,42 @@ This keeps future replacement with ONNX Runtime, C++, Rust, llama.cpp-class runt
 
 ## Source anchoring
 
-A source anchor should identify enough information to restore the user to the exact context used for an answer.
+Beginning in v0.0.2, source identity uses cryptographic hashes rather than the fast UI fingerprint used by v0.0.1.
 
-Initial anchor fields should include:
+A source anchor contains:
 
-- document fingerprint;
-- page number;
-- selected source text;
-- optional text-item/block identifiers;
-- bounding box(es) when reliable;
-- normalized source hash.
+- SHA-256 of the complete source document bytes;
+- one-based page number;
+- normalized selected source text;
+- SHA-256 of the normalized source quote;
+- PDF text-item start/end indices;
+- start/end character offsets;
+- creation time;
+- schema/version information.
 
-Anchors should survive ordinary UI actions and be stored separately from the source document.
+Restoration first attempts the stored text-item range. If those renderer boundaries have shifted, the page text layer is searched for the same normalized quote and the recovered range is highlighted. The original PDF remains unchanged.
 
 ## Document sidecars
 
-The original file should remain byte-for-byte untouched unless the user deliberately exports a derivative document.
+The original file remains byte-for-byte untouched unless the user deliberately exports a derivative document.
 
-Generated material should be stored in a sidecar format that can contain:
+v0.0.2 introduces a versioned JSON sidecar model. In the installed Tauri application, sidecars are stored under the application's data directory in a dedicated `sidecars` directory, keyed by the source document's SHA-256. The browser-development fallback uses local storage only for development convenience.
 
-- source-document fingerprint;
-- anchors;
+A sidecar can contain records for:
+
+- source selections;
 - translations;
 - explanations;
+- questions/answers;
 - user notes/corrections;
 - model/version provenance;
 - domain-pack provenance;
-- verification citations/status.
+- verification citations/status;
+- human-review status.
+
+v0.0.2 writes source-selection records only; future AI outputs must attach to the same provenance model rather than inventing a parallel store.
+
+The sidecar JSON format is described by `schemas/document-sidecar.schema.json`.
 
 The sidecar must not be assumed legally safe to redistribute merely because it does not contain the original PDF.
 
@@ -143,17 +155,21 @@ Engineering requirements include:
 - explicit visible network state;
 - deterministic logging of externally transmitted verification queries where reasonable;
 - minimal permissions;
-- dependency review for unexpected network behavior.
+- dependency review for unexpected network behavior;
+- document and sidecar size limits at the native boundary;
+- SHA-256 source identity for provenance.
 
-## Packaging
+## Packaging and release validation
 
-The application should be packaged from early development.
+The application is packaged from early development.
 
 Reference distribution path:
 
-`source -> CI build -> platform bundle/installer -> clean-machine smoke test`
+`source -> CI checks -> platform bundle/installer -> checksum -> clean-machine smoke test`
 
-Windows is the initial reference platform. Linux and macOS follow once the Windows vertical slice is stable. Android is a first-class future platform, especially for camera/SOP/accessibility use cases.
+Windows is the initial reference platform. CI verifies application-version consistency, runs tests/builds, produces exactly one NSIS installer, applies a minimum-size sanity check, calculates SHA-256 and uploads the installer with its checksum manifest. The clean-machine GUI workflow is documented separately in `RELEASE_CHECKLIST.md`.
+
+Linux and macOS follow once the Windows vertical slice is stable. Android is a first-class future platform, especially for camera/SOP/accessibility use cases.
 
 ## Architectural decision discipline
 
