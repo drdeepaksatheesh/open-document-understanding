@@ -4,6 +4,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { PdfPage } from "./PdfPage";
 import { runLocalHindi } from "./localHindiEngine";
+import { parseModelPackManifest, supportsEnglishToHindiTranslation, type ModelPackManifest } from "./modelPack";
 import { anchorMatchesDocument, sha256Bytes, type SourceAnchor } from "./sourceAnchor";
 import {
   addGeneratedRecord,
@@ -15,6 +16,7 @@ import {
   saveDocumentSidecar,
   type DocumentSidecar
 } from "./sidecar";
+import { chooseUserTranslationProvider } from "./translationProvider";
 
 const SETTINGS_KEY = "odu.settings.v2";
 
@@ -51,17 +53,29 @@ export default function App() {
   const [documentByteLength, setDocumentByteLength] = useState(0);
   const [anchor, setAnchor] = useState<SourceAnchor | null>(null);
   const [sidecar, setSidecar] = useState<DocumentSidecar | null>(null);
-  const [mode, setMode] = useState<Mode>("explain");
+  const [mode, setMode] = useState<Mode>("translate");
   const [question, setQuestion] = useState("");
   const [runtimeMessage, setRuntimeMessage] = useState("");
   const [settings, setSettings] = useState<Settings>(() => loadSettings());
   const [status, setStatus] = useState("Ready. No document is open.");
+  const [installedModelPacks, setInstalledModelPacks] = useState<ModelPackManifest[]>([]);
+  const [modelPackStatus, setModelPackStatus] = useState("Checking local model packs…");
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const translationProvider = useMemo(() => chooseUserTranslationProvider(installedModelPacks), [installedModelPacks]);
+  const translationPack = useMemo(
+    () => installedModelPacks.find(supportsEnglishToHindiTranslation) ?? null,
+    [installedModelPacks]
+  );
 
   useEffect(() => {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
     document.documentElement.dataset.theme = settings.theme;
   }, [settings]);
+
+  useEffect(() => {
+    void refreshModelPacks();
+  }, []);
 
   useEffect(() => {
     if (!pdf) return;
@@ -77,6 +91,49 @@ export default function App() {
   useEffect(() => {
     setRuntimeMessage("");
   }, [mode, anchor?.quoteSha256, settings.targetLanguage, settings.explanationLevel]);
+
+  async function refreshModelPacks() {
+    if (!isTauri()) {
+      setInstalledModelPacks([]);
+      setModelPackStatus("Model-pack discovery is available in the installed desktop app.");
+      return;
+    }
+    try {
+      const raw = await invoke<string>("discover_model_packs");
+      const candidates = JSON.parse(raw) as unknown[];
+      const manifests = candidates.map(parseModelPackManifest);
+      setInstalledModelPacks(manifests);
+      const compatible = manifests.find(supportsEnglishToHindiTranslation);
+      setModelPackStatus(
+        compatible
+          ? `Validated local pack: ${compatible.packId} ${compatible.packVersion}`
+          : "Hindi translation model pack is not installed."
+      );
+    } catch (error) {
+      setInstalledModelPacks([]);
+      setModelPackStatus(`Could not inspect local model packs: ${String(error)}`);
+    }
+  }
+
+  async function importModelPack() {
+    if (!isTauri()) {
+      setRuntimeMessage("Model-pack import is available in the installed desktop app.");
+      return;
+    }
+    try {
+      const selected = await open({ multiple: false, directory: true });
+      if (!selected || Array.isArray(selected)) return;
+      setStatus("Validating model-pack manifest and SHA-256 hashes locally…");
+      const raw = await invoke<string>("import_model_pack", { sourceDirectory: selected });
+      const manifest = parseModelPackManifest(JSON.parse(raw));
+      setStatus(`Installed validated local model pack ${manifest.packId} ${manifest.packVersion}.`);
+      setRuntimeMessage("");
+      await refreshModelPacks();
+    } catch (error) {
+      setRuntimeMessage(`Model pack was not installed: ${String(error)}`);
+      setStatus("Model-pack import rejected or failed. No unvalidated pack was enabled.");
+    }
+  }
 
   async function loadPdfBytes(bytes: Uint8Array, name: string) {
     setStatus("Hashing and opening PDF locally…");
@@ -169,25 +226,12 @@ export default function App() {
     setSettings((current) => ({ ...current, theme: current.theme === "dark" ? "light" : "dark" }));
   }
 
-  async function runLocalAction(operation: "translate" | "explain") {
-    if (!anchor) {
-      setRuntimeMessage("Select source text before running the local engine.");
-      return;
-    }
-
-    const result = runLocalHindi({
-      sourceText: anchor.quote,
-      operation,
-      targetLanguage: settings.targetLanguage,
-      explanationLevel: settings.explanationLevel
-    });
-
-    if (result.status === "unsupported") {
-      setRuntimeMessage(result.reason);
-      setStatus("Reference engine declined unsupported text instead of inventing output.");
-      return;
-    }
-
+  async function persistGeneratedOutput(input: {
+    operation: "translate" | "explain";
+    output: string;
+    engine: { id: string; version: string; local: boolean };
+  }) {
+    if (!anchor) return;
     const base =
       sidecar ??
       createDocumentSidecar({
@@ -196,22 +240,61 @@ export default function App() {
         byteLength: documentByteLength
       });
     const updated = addGeneratedRecord(base, {
-      operation,
+      operation: input.operation,
       anchor,
-      output: result.output,
+      output: input.output,
       targetLanguage: settings.targetLanguage,
-      explanationLevel: operation === "explain" ? settings.explanationLevel : undefined,
-      engine: result.engine
+      explanationLevel: input.operation === "explain" ? settings.explanationLevel : undefined,
+      engine: input.engine
     });
 
     setSidecar(updated);
     setRuntimeMessage("");
     try {
       await saveDocumentSidecar(updated);
-      setStatus(`${operation === "translate" ? "Translation" : "Explanation"} generated locally and saved with provenance.`);
+      setStatus(`${input.operation === "translate" ? "Translation" : "Explanation"} generated locally and saved with provenance.`);
     } catch (error) {
       setStatus(`Output was generated locally, but its sidecar could not be saved: ${String(error)}`);
     }
+  }
+
+  async function runLocalAction(operation: "translate" | "explain") {
+    if (!anchor) {
+      setRuntimeMessage("Select source text before running a local engine.");
+      return;
+    }
+
+    if (operation === "translate") {
+      if (settings.targetLanguage !== "Hindi") {
+        setRuntimeMessage("The first real translation provider supports Hindi only.");
+        return;
+      }
+      const result = await translationProvider.translate({
+        sourceText: anchor.quote,
+        sourceLanguage: "English",
+        targetLanguage: "Hindi"
+      });
+      if (result.status === "error") {
+        setRuntimeMessage(result.message);
+        setStatus(`Local translation unavailable: ${result.code}. No fallback output was invented.`);
+        return;
+      }
+      await persistGeneratedOutput({ operation: "translate", output: result.output, engine: result.engine });
+      return;
+    }
+
+    const result = runLocalHindi({
+      sourceText: anchor.quote,
+      operation: "explain",
+      targetLanguage: settings.targetLanguage,
+      explanationLevel: settings.explanationLevel
+    });
+    if (result.status === "unsupported") {
+      setRuntimeMessage(result.reason);
+      setStatus("Reference explanation engine declined unsupported text instead of inventing output.");
+      return;
+    }
+    await persistGeneratedOutput({ operation: "explain", output: result.output, engine: result.engine });
   }
 
   const activeGeneratedRecord = useMemo(() => {
@@ -233,23 +316,27 @@ export default function App() {
         : "Type a question about the selected passage. Ask remains intentionally disabled in this slice.";
     }
     if (activeGeneratedRecord?.output) return activeGeneratedRecord.output;
-    return mode === "translate"
-      ? "No saved Hindi translation for this source yet. Run the local reference engine below."
-      : "No saved simple Hindi explanation for this source yet. Run the local reference engine below.";
-  }, [activeGeneratedRecord?.output, anchor, mode, question, runtimeMessage]);
+    if (mode === "translate") {
+      return translationPack
+        ? "Validated Hindi model pack is installed. Its inference worker is the next integration step; no reference translation will be substituted."
+        : "Hindi model pack is not installed. Import a validated local model-pack directory to prepare real offline translation.";
+    }
+    return "No saved simple Hindi explanation for this source yet. Explain still uses the explicit reference engine in this phase.";
+  }, [activeGeneratedRecord?.output, anchor, mode, question, runtimeMessage, translationPack]);
 
   const savedSourceCount = sidecar?.records.filter((record) => record.operation === "source").length ?? 0;
   const savedGeneratedCount =
     sidecar?.records.filter((record) => record.operation === "translate" || record.operation === "explain").length ?? 0;
+  const activeEngineIsReference = activeGeneratedRecord?.engine?.id === "odu.hindi-reference";
 
   return (
     <div className="app-shell">
       <header className="topbar">
         <div className="brand">
           <strong>Open Document Understanding</strong>
-          <span className="version">v0.1a</span>
+          <span className="version">v0.1b</span>
         </div>
-        <div className="privacy-badge" title="This slice has no runtime network path.">
+        <div className="privacy-badge" title="Document processing and model-pack validation have no runtime network path.">
           <span className="privacy-dot" /> LOCAL ONLY
         </div>
         <button className="theme-toggle" onClick={toggleTheme} aria-pressed={settings.theme === "dark"}>
@@ -283,7 +370,7 @@ export default function App() {
             {!pdf && (
               <div className="empty-state">
                 <h1>Understand the document. Keep the source.</h1>
-                <p>Open a selectable-text PDF. This reference slice does not upload the document.</p>
+                <p>Open a selectable-text PDF. Document handling remains local.</p>
                 <button className="primary large" onClick={() => void choosePdf()}>Open your first PDF</button>
               </div>
             )}
@@ -350,17 +437,29 @@ export default function App() {
             )}
           </section>
 
+          {mode === "translate" && (
+            <section className="controls-card">
+              <div className="eyebrow">OFFLINE HINDI MODEL</div>
+              <p>{modelPackStatus}</p>
+              <button className="theme-toggle" onClick={() => void importModelPack()}>Import local model pack</button>
+            </section>
+          )}
+
           <section className="output-card">
             <div className="eyebrow">{mode.toUpperCase()} OUTPUT</div>
             <p>{placeholder}</p>
             {(mode === "translate" || mode === "explain") && anchor && (
-              <button className="primary local-action" onClick={() => void runLocalAction(mode)}>
+              <button
+                className="primary local-action"
+                disabled={mode === "translate" && !translationPack}
+                onClick={() => void runLocalAction(mode)}
+              >
                 Run local {mode === "translate" ? "Hindi translation" : "simple Hindi explanation"}
               </button>
             )}
             {activeGeneratedRecord && (
               <div className="generation-meta">
-                <span>LOCAL REFERENCE ENGINE</span>
+                <span>{activeEngineIsReference ? "LOCAL REFERENCE ENGINE" : "LOCAL MODEL"}</span>
                 <span>{activeGeneratedRecord.engine?.id} · {activeGeneratedRecord.engine?.version}</span>
                 <span>Externally verified: no · Human reviewed: no</span>
               </div>
@@ -368,7 +467,7 @@ export default function App() {
           </section>
 
           <div className="reference-warning">
-            v0.1a uses a tiny deterministic regression catalog to prove the local engine → provenance → restore path. It is not yet a general translator.
+            v0.1b removes automatic reference translation from normal Translate. Model packs are validated locally before activation; real inference worker connection follows next. Explain remains an explicit regression/reference path for now.
           </div>
           <div className="status-line" role="status">{status}</div>
         </aside>
