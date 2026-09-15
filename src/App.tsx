@@ -3,21 +3,31 @@ import { getDocument, type PDFDocumentProxy, type PDFPageProxy } from "pdfjs-dis
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { PdfPage } from "./PdfPage";
-import { anchorMatchesDocument, fingerprintBytes, type SourceAnchor } from "./sourceAnchor";
+import { anchorMatchesDocument, sha256Bytes, type SourceAnchor } from "./sourceAnchor";
+import {
+  addSourceRecord,
+  createDocumentSidecar,
+  latestSourceAnchor,
+  loadDocumentSidecar,
+  saveDocumentSidecar,
+  type DocumentSidecar
+} from "./sidecar";
 
-const SETTINGS_KEY = "odu.settings.v1";
-const ANCHOR_KEY = "odu.last-anchor.v1";
+const SETTINGS_KEY = "odu.settings.v2";
 
 type Mode = "translate" | "explain" | "ask";
+type Theme = "light" | "dark";
 
 type Settings = {
   targetLanguage: string;
   explanationLevel: string;
+  theme: Theme;
 };
 
 const defaultSettings: Settings = {
   targetLanguage: "Hindi",
-  explanationLevel: "Simple"
+  explanationLevel: "Simple",
+  theme: "light"
 };
 
 function loadSettings(): Settings {
@@ -28,23 +38,16 @@ function loadSettings(): Settings {
   }
 }
 
-function loadAnchor(): SourceAnchor | null {
-  try {
-    const raw = localStorage.getItem(ANCHOR_KEY);
-    return raw ? (JSON.parse(raw) as SourceAnchor) : null;
-  } catch {
-    return null;
-  }
-}
-
 export default function App() {
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [page, setPage] = useState<PDFPageProxy | null>(null);
   const [pageNumber, setPageNumber] = useState(1);
   const [scale, setScale] = useState(1.15);
   const [fileName, setFileName] = useState<string>("");
-  const [fingerprint, setFingerprint] = useState<string>("");
+  const [documentSha256, setDocumentSha256] = useState<string>("");
+  const [documentByteLength, setDocumentByteLength] = useState(0);
   const [anchor, setAnchor] = useState<SourceAnchor | null>(null);
+  const [sidecar, setSidecar] = useState<DocumentSidecar | null>(null);
   const [mode, setMode] = useState<Mode>("explain");
   const [question, setQuestion] = useState("");
   const [settings, setSettings] = useState<Settings>(() => loadSettings());
@@ -53,6 +56,7 @@ export default function App() {
 
   useEffect(() => {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    document.documentElement.dataset.theme = settings.theme;
   }, [settings]);
 
   useEffect(() => {
@@ -67,21 +71,32 @@ export default function App() {
   }, [pdf, pageNumber]);
 
   async function loadPdfBytes(bytes: Uint8Array, name: string) {
-    setStatus("Opening PDF locally…");
-    const localFingerprint = fingerprintBytes(bytes);
+    setStatus("Hashing and opening PDF locally…");
+    const sha256 = await sha256Bytes(bytes);
     const task = getDocument({ data: bytes });
     const loaded = await task.promise;
     setPdf(loaded);
     setPageNumber(1);
     setPage(null);
     setFileName(name);
-    setFingerprint(localFingerprint);
+    setDocumentSha256(sha256);
+    setDocumentByteLength(bytes.byteLength);
 
-    const previous = loadAnchor();
-    if (previous && anchorMatchesDocument(previous, localFingerprint)) {
+    const storedSidecar = loadDocumentSidecar(sha256);
+    const nextSidecar =
+      storedSidecar ??
+      createDocumentSidecar({
+        sha256,
+        fileName: name,
+        byteLength: bytes.byteLength
+      });
+    setSidecar(nextSidecar);
+
+    const previous = latestSourceAnchor(nextSidecar);
+    if (previous && anchorMatchesDocument(previous, sha256)) {
       setAnchor(previous);
       setPageNumber(Math.min(Math.max(1, previous.page), loaded.numPages));
-      setStatus("PDF opened locally. Previous source anchor restored.");
+      setStatus("PDF opened locally. Source anchor restored from local sidecar.");
     } else {
       setAnchor(null);
       setStatus("PDF opened locally. Select text to begin.");
@@ -119,14 +134,29 @@ export default function App() {
 
   function rememberAnchor(next: SourceAnchor) {
     setAnchor(next);
-    localStorage.setItem(ANCHOR_KEY, JSON.stringify(next));
-    setStatus(`Source anchored on page ${next.page}.`);
+    setSidecar((current) => {
+      const base =
+        current ??
+        createDocumentSidecar({
+          sha256: next.documentSha256,
+          fileName: fileName || "document.pdf",
+          byteLength: documentByteLength
+        });
+      const updated = addSourceRecord(base, next);
+      saveDocumentSidecar(updated);
+      return updated;
+    });
+    setStatus(`Source anchored on page ${next.page} and saved locally.`);
   }
 
   function returnToSource() {
     if (!anchor) return;
     setPageNumber(anchor.page);
     setStatus(`Returned to anchored source on page ${anchor.page}.`);
+  }
+
+  function toggleTheme() {
+    setSettings((current) => ({ ...current, theme: current.theme === "dark" ? "light" : "dark" }));
   }
 
   const placeholder = useMemo(() => {
@@ -137,21 +167,26 @@ export default function App() {
     if (mode === "ask") {
       return question.trim()
         ? "Document-grounded question engine not installed yet. The future answer will cite this exact source anchor."
-        : "Type a question about the selected passage. v0.0.1 deliberately does not invent an answer.";
+        : "Type a question about the selected passage. v0.0.2 deliberately does not invent an answer.";
     }
-    return `${settings.explanationLevel} explanation engine not installed yet. v0.0.1 proves the private reader and source-anchoring path first.`;
+    return `${settings.explanationLevel} explanation engine not installed yet. v0.0.2 hardens durable source provenance before local AI is added.`;
   }, [anchor, mode, question, settings]);
+
+  const savedSourceCount = sidecar?.records.filter((record) => record.operation === "source").length ?? 0;
 
   return (
     <div className="app-shell">
       <header className="topbar">
         <div className="brand">
           <strong>Open Document Understanding</strong>
-          <span className="version">v0.0.1</span>
+          <span className="version">v0.0.2</span>
         </div>
         <div className="privacy-badge" title="The current milestone has no online verification path.">
           <span className="privacy-dot" /> LOCAL ONLY
         </div>
+        <button className="theme-toggle" onClick={toggleTheme} aria-pressed={settings.theme === "dark"}>
+          {settings.theme === "dark" ? "Light mode" : "Dark mode"}
+        </button>
         <button className="primary" onClick={() => void choosePdf()}>Open PDF</button>
         <input
           ref={fileInputRef}
@@ -190,7 +225,7 @@ export default function App() {
                 page={page}
                 pageNumber={pageNumber}
                 scale={scale}
-                documentFingerprint={fingerprint}
+                documentSha256={documentSha256}
                 activeAnchor={anchor}
                 onAnchor={rememberAnchor}
               />
@@ -211,6 +246,11 @@ export default function App() {
               <>
                 <div className="source-meta">Page {anchor.page} · items {anchor.startItem}–{anchor.endItem}</div>
                 <blockquote>{anchor.quote}</blockquote>
+                <div className="provenance-meta">
+                  <span>Document SHA-256 {anchor.documentSha256.slice(0, 12)}…</span>
+                  <span>Quote SHA-256 {anchor.quoteSha256.slice(0, 12)}…</span>
+                  <span>{savedSourceCount} saved source {savedSourceCount === 1 ? "record" : "records"}</span>
+                </div>
                 <button className="link-button" onClick={returnToSource}>Return to source</button>
               </>
             ) : (
