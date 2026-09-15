@@ -12,6 +12,8 @@ export type ProvenanceRecord = {
   createdAt: string;
   output?: string;
   question?: string;
+  targetLanguage?: string;
+  explanationLevel?: string;
   engine?: {
     id: string;
     version: string;
@@ -81,10 +83,78 @@ export function addSourceRecord(sidecar: DocumentSidecar, anchor: SourceAnchor):
   };
 }
 
+export function addGeneratedRecord(
+  sidecar: DocumentSidecar,
+  input: {
+    operation: "translate" | "explain";
+    anchor: SourceAnchor;
+    output: string;
+    targetLanguage: string;
+    explanationLevel?: string;
+    engine: { id: string; version: string; local: boolean };
+  }
+): DocumentSidecar {
+  if (input.anchor.documentSha256 !== sidecar.document.sha256) {
+    throw new Error("Cannot attach generated output to a different document sidecar.");
+  }
+  if (!input.output.trim()) throw new Error("Generated output cannot be empty.");
+
+  const createdAt = new Date().toISOString();
+  const record: ProvenanceRecord = {
+    id: `${input.operation}-${input.anchor.quoteSha256.slice(0, 12)}-${Date.now()}`,
+    operation: input.operation,
+    anchor: input.anchor,
+    output: input.output.trim(),
+    targetLanguage: input.targetLanguage,
+    explanationLevel: input.explanationLevel,
+    engine: input.engine,
+    createdAt,
+    externallyVerified: false,
+    humanReviewed: false
+  };
+
+  const records = [
+    ...sidecar.records.filter(
+      (existing) =>
+        !(
+          existing.operation === input.operation &&
+          existing.anchor.quoteSha256 === input.anchor.quoteSha256 &&
+          existing.targetLanguage === input.targetLanguage &&
+          existing.explanationLevel === input.explanationLevel &&
+          existing.engine?.id === input.engine.id &&
+          existing.engine?.version === input.engine.version
+        )
+    ),
+    record
+  ];
+
+  return { ...sidecar, records, updatedAt: createdAt };
+}
+
 export function latestSourceAnchor(sidecar: DocumentSidecar): SourceAnchor | null {
   const sources = sidecar.records.filter((record) => record.operation === "source");
   if (sources.length === 0) return null;
   return sources[sources.length - 1].anchor;
+}
+
+export function latestGeneratedRecord(
+  sidecar: DocumentSidecar,
+  input: {
+    operation: "translate" | "explain";
+    anchor: SourceAnchor;
+    targetLanguage: string;
+    explanationLevel?: string;
+  }
+): ProvenanceRecord | null {
+  const matching = sidecar.records.filter(
+    (record) =>
+      record.operation === input.operation &&
+      record.anchor.quoteSha256 === input.anchor.quoteSha256 &&
+      record.targetLanguage === input.targetLanguage &&
+      record.explanationLevel === input.explanationLevel &&
+      typeof record.output === "string"
+  );
+  return matching.length ? matching[matching.length - 1] : null;
 }
 
 export function parseDocumentSidecar(value: string): DocumentSidecar | null {

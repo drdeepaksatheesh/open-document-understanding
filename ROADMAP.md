@@ -20,7 +20,7 @@ Completed and clean-machine validated on Windows:
 - Windows NSIS packaging;
 - synthetic smoke-test document.
 
-## v0.0.2 — Robust source anchoring and release hardening (current)
+## v0.0.2 — Robust source anchoring and release hardening ✅
 
 - SHA-256 document identity;
 - SHA-256 normalized quote identity;
@@ -33,19 +33,35 @@ Completed and clean-machine validated on Windows:
 - persistent Light/Dark mode;
 - cross-file version consistency checks;
 - validated Windows installer checksum manifest;
-- release-validation checklist.
+- clean-machine persistence validation.
 
-Exit criterion: a stored source/provenance record survives application restart, reopens against the same SHA-256-identified PDF, reliably restores/highlights its source context, and the v0.0.2 Windows installer passes the documented clean-machine validation including persistent dark mode.
+## v0.1a — Local Hindi reference intelligence (current)
 
-## v0.1 — First local understanding loop
+Goal: prove the complete local-generation lifecycle without coupling it to a heavyweight model runtime.
 
-- local translation engine;
-- English -> Hindi vertical slice;
-- local explanation engine;
+- deterministic built-in Hindi reference engine;
+- Translate and Simple Explain operations;
+- medical, administrative and safety regression passages;
+- explicit `unsupported` behavior for unknown text;
+- generated-output sidecar records with language, level and engine provenance;
+- externally-verified and human-reviewed states remain explicit and false by default;
+- saved generated outputs restore when the same source is reopened;
+- no runtime network path added;
+- Windows installer and CI validation retained.
+
+Exit criterion: a supported English passage can be translated and explained in Hindi locally, each output is separately persisted with its exact source anchor and engine provenance, and the output survives restart/reopen. Unknown passages must be rejected rather than fabricated.
+
+## v0.1 — First production local understanding loop
+
+- replace the reference engine behind the same contract with a distributable local model/runtime;
+- English -> Hindi general translation vertical slice;
+- local explanation engine beyond the fixed regression catalog;
 - document-grounded Ask mode;
 - clear provenance labels for Translate / Explain / Ask;
 - no document upload required;
-- model pack manifest and installation path.
+- model pack manifest and installation path;
+- CPU-only Windows benchmark and memory/latency targets;
+- model/runtime license documentation.
 
 Exit criterion: a normal Windows user can install the app + required model pack and use Translate, Explain and Ask on a local English PDF without internet access.
 

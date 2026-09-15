@@ -3,10 +3,13 @@ import { getDocument, type PDFDocumentProxy, type PDFPageProxy } from "pdfjs-dis
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { PdfPage } from "./PdfPage";
+import { runLocalHindi } from "./localHindiEngine";
 import { anchorMatchesDocument, sha256Bytes, type SourceAnchor } from "./sourceAnchor";
 import {
+  addGeneratedRecord,
   addSourceRecord,
   createDocumentSidecar,
+  latestGeneratedRecord,
   latestSourceAnchor,
   loadDocumentSidecar,
   saveDocumentSidecar,
@@ -50,6 +53,7 @@ export default function App() {
   const [sidecar, setSidecar] = useState<DocumentSidecar | null>(null);
   const [mode, setMode] = useState<Mode>("explain");
   const [question, setQuestion] = useState("");
+  const [runtimeMessage, setRuntimeMessage] = useState("");
   const [settings, setSettings] = useState<Settings>(() => loadSettings());
   const [status, setStatus] = useState("Ready. No document is open.");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -69,6 +73,10 @@ export default function App() {
       cancelled = true;
     };
   }, [pdf, pageNumber]);
+
+  useEffect(() => {
+    setRuntimeMessage("");
+  }, [mode, anchor?.quoteSha256, settings.targetLanguage, settings.explanationLevel]);
 
   async function loadPdfBytes(bytes: Uint8Array, name: string) {
     setStatus("Hashing and opening PDF locally…");
@@ -96,7 +104,7 @@ export default function App() {
     if (previous && anchorMatchesDocument(previous, sha256)) {
       setAnchor(previous);
       setPageNumber(Math.min(Math.max(1, previous.page), loaded.numPages));
-      setStatus("PDF opened locally. Source anchor restored from durable local sidecar.");
+      setStatus("PDF opened locally. Source anchor and saved outputs restored from the local sidecar.");
     } else {
       setAnchor(null);
       setStatus("PDF opened locally. Select text to begin.");
@@ -161,29 +169,87 @@ export default function App() {
     setSettings((current) => ({ ...current, theme: current.theme === "dark" ? "light" : "dark" }));
   }
 
-  const placeholder = useMemo(() => {
-    if (!anchor) return "Select text in the PDF. Your source passage will appear here before any AI is allowed to act on it.";
-    if (mode === "translate") {
-      return `Translation engine not installed yet. Planned target: ${settings.targetLanguage}. The source remains unchanged.`;
+  async function runLocalAction(operation: "translate" | "explain") {
+    if (!anchor) {
+      setRuntimeMessage("Select source text before running the local engine.");
+      return;
     }
+
+    const result = runLocalHindi({
+      sourceText: anchor.quote,
+      operation,
+      targetLanguage: settings.targetLanguage,
+      explanationLevel: settings.explanationLevel
+    });
+
+    if (result.status === "unsupported") {
+      setRuntimeMessage(result.reason);
+      setStatus("Reference engine declined unsupported text instead of inventing output.");
+      return;
+    }
+
+    const base =
+      sidecar ??
+      createDocumentSidecar({
+        sha256: anchor.documentSha256,
+        fileName: fileName || "document.pdf",
+        byteLength: documentByteLength
+      });
+    const updated = addGeneratedRecord(base, {
+      operation,
+      anchor,
+      output: result.output,
+      targetLanguage: settings.targetLanguage,
+      explanationLevel: operation === "explain" ? settings.explanationLevel : undefined,
+      engine: result.engine
+    });
+
+    setSidecar(updated);
+    setRuntimeMessage("");
+    try {
+      await saveDocumentSidecar(updated);
+      setStatus(`${operation === "translate" ? "Translation" : "Explanation"} generated locally and saved with provenance.`);
+    } catch (error) {
+      setStatus(`Output was generated locally, but its sidecar could not be saved: ${String(error)}`);
+    }
+  }
+
+  const activeGeneratedRecord = useMemo(() => {
+    if (!sidecar || !anchor || (mode !== "translate" && mode !== "explain")) return null;
+    return latestGeneratedRecord(sidecar, {
+      operation: mode,
+      anchor,
+      targetLanguage: settings.targetLanguage,
+      explanationLevel: mode === "explain" ? settings.explanationLevel : undefined
+    });
+  }, [anchor, mode, settings.explanationLevel, settings.targetLanguage, sidecar]);
+
+  const placeholder = useMemo(() => {
+    if (runtimeMessage) return runtimeMessage;
+    if (!anchor) return "Select text in the PDF. Your source passage will appear here before any engine is allowed to act on it.";
     if (mode === "ask") {
       return question.trim()
-        ? "Document-grounded question engine not installed yet. The future answer will cite this exact source anchor."
-        : "Type a question about the selected passage. v0.0.2 deliberately does not invent an answer.";
+        ? "Document-grounded question engine is not installed yet. No answer has been invented."
+        : "Type a question about the selected passage. Ask remains intentionally disabled in this slice.";
     }
-    return `${settings.explanationLevel} explanation engine not installed yet. v0.0.2 hardens durable source provenance before local AI is added.`;
-  }, [anchor, mode, question, settings]);
+    if (activeGeneratedRecord?.output) return activeGeneratedRecord.output;
+    return mode === "translate"
+      ? "No saved Hindi translation for this source yet. Run the local reference engine below."
+      : "No saved simple Hindi explanation for this source yet. Run the local reference engine below.";
+  }, [activeGeneratedRecord?.output, anchor, mode, question, runtimeMessage]);
 
   const savedSourceCount = sidecar?.records.filter((record) => record.operation === "source").length ?? 0;
+  const savedGeneratedCount =
+    sidecar?.records.filter((record) => record.operation === "translate" || record.operation === "explain").length ?? 0;
 
   return (
     <div className="app-shell">
       <header className="topbar">
         <div className="brand">
           <strong>Open Document Understanding</strong>
-          <span className="version">v0.0.2</span>
+          <span className="version">v0.1a</span>
         </div>
-        <div className="privacy-badge" title="The current milestone has no online verification path.">
+        <div className="privacy-badge" title="This slice has no runtime network path.">
           <span className="privacy-dot" /> LOCAL ONLY
         </div>
         <button className="theme-toggle" onClick={toggleTheme} aria-pressed={settings.theme === "dark"}>
@@ -217,7 +283,7 @@ export default function App() {
             {!pdf && (
               <div className="empty-state">
                 <h1>Understand the document. Keep the source.</h1>
-                <p>Open a selectable-text PDF. Nothing is uploaded by this milestone.</p>
+                <p>Open a selectable-text PDF. This reference slice does not upload the document.</p>
                 <button className="primary large" onClick={() => void choosePdf()}>Open your first PDF</button>
               </div>
             )}
@@ -252,6 +318,7 @@ export default function App() {
                   <span>Document SHA-256 {anchor.documentSha256.slice(0, 12)}…</span>
                   <span>Quote SHA-256 {anchor.quoteSha256.slice(0, 12)}…</span>
                   <span>{savedSourceCount} saved source {savedSourceCount === 1 ? "record" : "records"}</span>
+                  <span>{savedGeneratedCount} saved generated {savedGeneratedCount === 1 ? "record" : "records"}</span>
                 </div>
                 <button className="link-button" onClick={returnToSource}>Return to source</button>
               </>
@@ -286,8 +353,23 @@ export default function App() {
           <section className="output-card">
             <div className="eyebrow">{mode.toUpperCase()} OUTPUT</div>
             <p>{placeholder}</p>
+            {(mode === "translate" || mode === "explain") && anchor && (
+              <button className="primary local-action" onClick={() => void runLocalAction(mode)}>
+                Run local {mode === "translate" ? "Hindi translation" : "simple Hindi explanation"}
+              </button>
+            )}
+            {activeGeneratedRecord && (
+              <div className="generation-meta">
+                <span>LOCAL REFERENCE ENGINE</span>
+                <span>{activeGeneratedRecord.engine?.id} · {activeGeneratedRecord.engine?.version}</span>
+                <span>Externally verified: no · Human reviewed: no</span>
+              </div>
+            )}
           </section>
 
+          <div className="reference-warning">
+            v0.1a uses a tiny deterministic regression catalog to prove the local engine → provenance → restore path. It is not yet a general translator.
+          </div>
           <div className="status-line" role="status">{status}</div>
         </aside>
       </main>
