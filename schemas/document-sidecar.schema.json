@@ -27,6 +27,8 @@
           "createdAt": { "type": "string" },
           "output": { "type": "string" },
           "question": { "type": "string" },
+          "targetLanguage": { "type": "string" },
+          "explanationLevel": { "type": "string" },
           "externallyVerified": { "type": "boolean" },
           "humanReviewed": { "type": "boolean" },
           "engine": {
