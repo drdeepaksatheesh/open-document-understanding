@@ -11,7 +11,7 @@ export type LocalHindiRequest = {
 
 export type LocalHindiEngineDescriptor = {
   id: "odu.hindi-reference";
-  version: "0.1a.1";
+  version: "0.1a.2";
   local: true;
 };
 
@@ -29,7 +29,7 @@ export type LocalHindiResult =
 
 export const LOCAL_HINDI_ENGINE: LocalHindiEngineDescriptor = {
   id: "odu.hindi-reference",
-  version: "0.1a.1",
+  version: "0.1a.2",
   local: true
 };
 
@@ -70,7 +70,16 @@ const CATALOG: CatalogEntry[] = [
 ];
 
 function lookupKey(value: string): string {
-  return normalizeQuote(value).toLocaleLowerCase("en-US");
+  // PDF text layers can split/join visual word runs differently from the logical
+  // sentence (for example `a given` can be extracted as `agiven`). The source
+  // anchor and quote hash must preserve the extracted text, so this relaxed key
+  // is used ONLY for deterministic catalog lookup. Removing punctuation and
+  // whitespace still requires the same ordered alphanumeric content; it is not
+  // fuzzy semantic matching.
+  return normalizeQuote(value)
+    .toLocaleLowerCase("en-US")
+    .normalize("NFKC")
+    .replace(/[^\p{L}\p{N}]+/gu, "");
 }
 
 const CATALOG_BY_SOURCE = new Map(CATALOG.map((entry) => [lookupKey(entry.source), entry]));
