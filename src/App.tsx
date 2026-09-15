@@ -82,7 +82,7 @@ export default function App() {
     setDocumentSha256(sha256);
     setDocumentByteLength(bytes.byteLength);
 
-    const storedSidecar = loadDocumentSidecar(sha256);
+    const storedSidecar = await loadDocumentSidecar(sha256);
     const nextSidecar =
       storedSidecar ??
       createDocumentSidecar({
@@ -96,7 +96,7 @@ export default function App() {
     if (previous && anchorMatchesDocument(previous, sha256)) {
       setAnchor(previous);
       setPageNumber(Math.min(Math.max(1, previous.page), loaded.numPages));
-      setStatus("PDF opened locally. Source anchor restored from local sidecar.");
+      setStatus("PDF opened locally. Source anchor restored from durable local sidecar.");
     } else {
       setAnchor(null);
       setStatus("PDF opened locally. Select text to begin.");
@@ -143,7 +143,9 @@ export default function App() {
           byteLength: documentByteLength
         });
       const updated = addSourceRecord(base, next);
-      saveDocumentSidecar(updated);
+      void saveDocumentSidecar(updated).catch((error) => {
+        setStatus(`Source is selected, but its sidecar could not be saved: ${String(error)}`);
+      });
       return updated;
     });
     setStatus(`Source anchored on page ${next.page} and saved locally.`);
