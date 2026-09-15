@@ -1,6 +1,6 @@
 [package]
 name = "open-document-understanding"
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3"
 description = "Privacy-first local document understanding reader"
 authors = ["Open Document Understanding contributors"]
 edition = "2021"
@@ -15,3 +15,6 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "packId": "odu-fixture-en-hi",
+  "packVersion": "0.0.1",
+  "engineId": "odu.fixture.en-hi",
+  "engineVersion": "fixture-1",
+  "operation": "translate",
+  "sourceLanguages": ["English"],
+  "targetLanguages": ["Hindi"],
+  "local": true,
+  "license": "CC0-1.0",
+  "files": [
+    {
+      "path": "runtime/odu-translate.fixture.txt",
+      "sha256": "2d7c9094f83f771c12a4d51a7a26b7f6af0d09936b93590b9761365a20550368"
+    }
+  ]
+}
