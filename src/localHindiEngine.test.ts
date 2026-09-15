@@ -21,6 +21,19 @@ describe("local Hindi reference engine", () => {
     }
   });
 
+  it("tolerates harmless PDF text-layer spacing differences without changing the stored source", () => {
+    const result = runLocalHindi({
+      sourceText:
+        "Myocardial contractility describes the intrinsic ability of cardiac muscle to generate force at agiven preload and afterload.",
+      operation: "translate",
+      targetLanguage: "Hindi",
+      explanationLevel: "Simple"
+    });
+
+    expect(result.status).toBe("ok");
+    if (result.status === "ok") expect(result.output).toContain("मायोकार्डियल");
+  });
+
   it("explains the same passage in simple Hindi", () => {
     const result = runLocalHindi({
       sourceText: MEDICAL,
