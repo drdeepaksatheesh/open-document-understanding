@@ -1,0 +1,65 @@
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #172033;
+  background: #eef1f5;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 980px; min-height: 100vh; background: #eef1f5; }
+button, select, textarea { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: default; opacity: .45; }
+
+.app-shell { min-height: 100vh; display: flex; flex-direction: column; }
+.topbar {
+  height: 64px; display: flex; align-items: center; gap: 14px; padding: 0 18px;
+  background: #ffffff; border-bottom: 1px solid #d9dee7; position: sticky; top: 0; z-index: 20;
+}
+.brand { display: flex; align-items: baseline; gap: 8px; margin-right: auto; }
+.version { font-size: 12px; color: #667085; }
+.privacy-badge { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 700; color: #176b45; background: #eaf8f1; padding: 8px 10px; border-radius: 999px; }
+.privacy-dot { width: 8px; height: 8px; border-radius: 50%; background: #19a463; }
+.primary { border: 0; border-radius: 9px; background: #2457d6; color: white; padding: 9px 14px; font-weight: 700; }
+.primary.large { padding: 12px 18px; }
+
+.workspace { display: grid; grid-template-columns: minmax(0, 1fr) 380px; min-height: calc(100vh - 64px); }
+.reader-column { min-width: 0; display: flex; flex-direction: column; }
+.reader-toolbar { height: 52px; display: flex; align-items: center; gap: 16px; padding: 0 16px; border-bottom: 1px solid #d9dee7; background: #f9fafb; }
+.file-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; margin-right: auto; }
+.toolbar-actions { display: flex; align-items: center; gap: 7px; font-size: 12px; color: #475467; }
+.toolbar-actions button { min-width: 32px; height: 30px; border: 1px solid #d0d5dd; background: white; border-radius: 7px; }
+.document-stage { flex: 1; min-height: 0; overflow: auto; padding: 28px; display: flex; align-items: flex-start; justify-content: center; background: #dfe4eb; }
+.empty-state { margin: auto; max-width: 620px; text-align: center; background: white; border: 1px solid #d9dee7; border-radius: 16px; padding: 42px; box-shadow: 0 12px 35px rgb(16 24 40 / 8%); }
+.empty-state h1 { margin-top: 0; font-size: 28px; }
+.empty-state p { color: #667085; line-height: 1.6; }
+.loading { margin: auto; color: #667085; }
+
+.pdf-page { position: relative; flex: 0 0 auto; background: white; box-shadow: 0 8px 28px rgb(16 24 40 / 18%); }
+.pdf-canvas { position: absolute; inset: 0; display: block; }
+.text-layer { position: absolute; inset: 0; overflow: hidden; line-height: 1; opacity: 1; user-select: text; }
+.text-item { position: absolute; white-space: pre; color: transparent; cursor: text; user-select: text; }
+.text-item::selection { background: rgb(75 126 255 / 38%); color: transparent; }
+.text-item.anchored { background: rgb(255 199 61 / 38%); border-radius: 2px; }
+
+.understanding-panel { border-left: 1px solid #d9dee7; background: #ffffff; padding: 16px; overflow: auto; }
+.panel-tabs { display: grid; grid-template-columns: repeat(3, 1fr); background: #f2f4f7; border-radius: 10px; padding: 4px; gap: 4px; }
+.panel-tabs button { border: 0; padding: 8px 6px; border-radius: 7px; background: transparent; color: #475467; font-weight: 700; }
+.panel-tabs button.active { background: white; color: #1d4ed8; box-shadow: 0 1px 3px rgb(16 24 40 / 12%); }
+.source-card, .controls-card, .output-card { margin-top: 14px; border: 1px solid #e4e7ec; border-radius: 12px; padding: 14px; }
+.eyebrow { font-size: 11px; letter-spacing: .08em; font-weight: 800; color: #667085; }
+.source-meta { font-size: 12px; color: #667085; margin-top: 7px; }
+blockquote { margin: 10px 0; padding-left: 12px; border-left: 3px solid #98a2b3; line-height: 1.55; }
+.link-button { border: 0; background: transparent; color: #2457d6; padding: 0; font-weight: 700; }
+.controls-card { display: grid; gap: 12px; }
+.controls-card label { display: grid; gap: 6px; font-size: 12px; font-weight: 700; color: #475467; }
+select, textarea { width: 100%; border: 1px solid #d0d5dd; border-radius: 8px; background: white; color: #172033; padding: 9px; }
+textarea { min-height: 86px; resize: vertical; }
+.output-card { background: #f8fafc; line-height: 1.55; }
+.output-card p { margin-bottom: 0; }
+.status-line { margin-top: 14px; font-size: 12px; color: #667085; line-height: 1.4; }
+
+@media (max-width: 1120px) {
+  .workspace { grid-template-columns: minmax(0, 1fr) 330px; }
+}
