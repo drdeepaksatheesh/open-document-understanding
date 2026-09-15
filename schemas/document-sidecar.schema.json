@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://open-document-understanding.local/schemas/document-sidecar.schema.json",
+  "title": "Open Document Understanding document sidecar",
+  "type": "object",
+  "required": ["schemaVersion", "document", "records", "createdAt", "updatedAt"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "document": {
+      "type": "object",
+      "required": ["sha256", "fileName", "byteLength"],
+      "properties": {
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "fileName": { "type": "string", "minLength": 1 },
+        "byteLength": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "records": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "operation", "anchor", "createdAt", "externallyVerified", "humanReviewed"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "operation": { "enum": ["source", "translate", "explain", "ask", "verify"] },
+          "createdAt": { "type": "string" },
+          "output": { "type": "string" },
+          "question": { "type": "string" },
+          "externallyVerified": { "type": "boolean" },
+          "humanReviewed": { "type": "boolean" },
+          "engine": {
+            "type": "object",
+            "required": ["id", "version", "local"],
+            "properties": {
+              "id": { "type": "string" },
+              "version": { "type": "string" },
+              "local": { "type": "boolean" }
+            },
+            "additionalProperties": false
+          },
+          "anchor": {
+            "type": "object",
+            "required": ["version", "documentSha256", "page", "quote", "quoteSha256", "startItem", "endItem", "startOffset", "endOffset", "createdAt"],
+            "properties": {
+              "version": { "const": 2 },
+              "documentSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+              "page": { "type": "integer", "minimum": 1 },
+              "quote": { "type": "string", "minLength": 1 },
+              "quoteSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+              "startItem": { "type": "integer", "minimum": 0 },
+              "endItem": { "type": "integer", "minimum": 0 },
+              "startOffset": { "type": "integer", "minimum": 0 },
+              "endOffset": { "type": "integer", "minimum": 0 },
+              "createdAt": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "createdAt": { "type": "string" },
+    "updatedAt": { "type": "string" }
+  },
+  "additionalProperties": false
+}

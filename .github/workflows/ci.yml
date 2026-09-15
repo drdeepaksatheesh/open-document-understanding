@@ -22,10 +22,14 @@ jobs:
           cache-dependency-path: package.json
       - name: Install dependencies
         run: npm install --ignore-scripts
+      - name: Version consistency
+        run: npm run check:version
       - name: Unit tests
         run: npm test
       - name: Web build
         run: npm run build
+      - name: Dependency audit (critical only)
+        run: npm audit --audit-level=critical
 
   windows-installer:
     name: Windows NSIS installer
@@ -41,11 +45,27 @@ jobs:
           workspaces: src-tauri
       - name: Install frontend dependencies
         run: npm install --ignore-scripts
+      - name: Version consistency
+        run: npm run check:version
       - name: Build NSIS installer
         run: npm run tauri build -- --bundles nsis
-      - name: Upload Windows installer
+      - name: Validate installer and write checksum
+        shell: pwsh
+        run: |
+          $files = @(Get-ChildItem "src-tauri/target/release/bundle/nsis/*.exe")
+          if ($files.Count -ne 1) { throw "Expected exactly one NSIS installer, found $($files.Count)." }
+          $installer = $files[0]
+          if ($installer.Length -lt 500000) { throw "Installer is unexpectedly small: $($installer.Length) bytes." }
+          $hash = (Get-FileHash $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $($installer.Name)" | Set-Content -Encoding ascii "src-tauri/target/release/bundle/nsis/installer-sha256.txt"
+          Write-Host "Validated installer: $($installer.Name) ($($installer.Length) bytes)"
+          Write-Host "SHA-256: $hash"
+      - name: Upload validated Windows installer
         uses: actions/upload-artifact@v4
         with:
           name: open-document-understanding-windows-nsis
-          path: src-tauri/target/release/bundle/nsis/*.exe
+          path: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/nsis/installer-sha256.txt
           if-no-files-found: error
+          retention-days: 90

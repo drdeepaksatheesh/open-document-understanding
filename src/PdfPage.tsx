@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Util, type PDFPageProxy } from "pdfjs-dist";
 import type { SourceAnchor } from "./sourceAnchor";
-import { createSourceAnchor } from "./sourceAnchor";
+import { createSourceAnchor, resolveAnchorRange } from "./sourceAnchor";
 
 type TextItemLike = {
   str: string;
@@ -14,7 +14,7 @@ type Props = {
   page: PDFPageProxy;
   pageNumber: number;
   scale: number;
-  documentFingerprint: string;
+  documentSha256: string;
   activeAnchor: SourceAnchor | null;
   onAnchor: (anchor: SourceAnchor) => void;
 };
@@ -25,11 +25,18 @@ function closestTextItem(node: Node | null): HTMLElement | null {
   return element?.closest<HTMLElement>(".text-item") ?? null;
 }
 
-export function PdfPage({ page, pageNumber, scale, documentFingerprint, activeAnchor, onAnchor }: Props) {
+export function PdfPage({ page, pageNumber, scale, documentSha256, activeAnchor, onAnchor }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const layerRef = useRef<HTMLDivElement>(null);
   const [items, setItems] = useState<TextItemLike[]>([]);
   const viewport = page.getViewport({ scale });
+  const resolvedAnchor = useMemo(
+    () =>
+      activeAnchor?.page === pageNumber
+        ? resolveAnchorRange(activeAnchor, items.map((item) => item.str))
+        : null,
+    [activeAnchor, items, pageNumber]
+  );
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -70,12 +77,12 @@ export function PdfPage({ page, pageNumber, scale, documentFingerprint, activeAn
   }, [page, scale]);
 
   useEffect(() => {
-    if (!activeAnchor || activeAnchor.page !== pageNumber || !layerRef.current) return;
-    const first = layerRef.current.querySelector<HTMLElement>(`[data-item-index="${activeAnchor.startItem}"]`);
+    if (!resolvedAnchor || !layerRef.current) return;
+    const first = layerRef.current.querySelector<HTMLElement>(`[data-item-index="${resolvedAnchor.startItem}"]`);
     first?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [activeAnchor, pageNumber, items]);
+  }, [resolvedAnchor]);
 
-  function captureSelection() {
+  async function captureSelection() {
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed || !layerRef.current) return;
     const range = selection.getRangeAt(0);
@@ -89,8 +96,8 @@ export function PdfPage({ page, pageNumber, scale, documentFingerprint, activeAn
     const endItem = Number(endElement.dataset.itemIndex);
     if (!Number.isFinite(startItem) || !Number.isFinite(endItem)) return;
 
-    const anchor = createSourceAnchor({
-      documentFingerprint,
+    const anchor = await createSourceAnchor({
+      documentSha256,
       page: pageNumber,
       quote: selection.toString(),
       startItem: Math.min(startItem, endItem),
@@ -102,7 +109,7 @@ export function PdfPage({ page, pageNumber, scale, documentFingerprint, activeAn
   }
 
   return (
-    <div className="pdf-page" style={{ width: viewport.width, height: viewport.height }} onMouseUp={captureSelection}>
+    <div className="pdf-page" style={{ width: viewport.width, height: viewport.height }} onMouseUp={() => void captureSelection()}>
       <canvas ref={canvasRef} className="pdf-canvas" aria-label={`PDF page ${pageNumber}`} />
       <div ref={layerRef} className="text-layer" style={{ width: viewport.width, height: viewport.height }}>
         {items.map((item, index) => {
@@ -112,7 +119,7 @@ export function PdfPage({ page, pageNumber, scale, documentFingerprint, activeAn
           const left = tx[4];
           const top = tx[5] - fontHeight;
           const anchored =
-            activeAnchor?.page === pageNumber && index >= activeAnchor.startItem && index <= activeAnchor.endItem;
+            resolvedAnchor !== null && index >= resolvedAnchor.startItem && index <= resolvedAnchor.endItem;
           return (
             <span
               key={`${index}-${item.str}`}
