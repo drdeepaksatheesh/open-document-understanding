@@ -8,19 +8,24 @@ A privacy-first, open-source document reader whose goal is simple:
 
 The project started from a medical-education use case but is intentionally generic. Medical science will become an optional domain pack rather than the core application.
 
-## Current milestone: v0.0.1
+## Current milestone: v0.0.2
 
-The first milestone is intentionally foundational:
+v0.0.1 proved that the application can be built, installed and used on a clean Windows machine. v0.0.2 hardens the provenance layer before any local AI is introduced.
 
-- desktop application shell using Tauri 2;
-- selectable-text PDF opening and rendering using PDF.js;
-- paragraph/text selection;
-- a source-anchored side panel with **Translate / Explain / Ask** modes;
-- no AI model yet;
-- no OCR yet;
-- no document upload at runtime.
+Current capabilities include:
 
-The point is to prove the product shell, packaging boundary, source anchoring and privacy model before adding model complexity.
+- Tauri 2 + React/TypeScript desktop application;
+- local selectable-text PDF opening and PDF.js rendering;
+- source passage selection and return-to-source highlighting;
+- SHA-256 identity for source documents and normalized source quotes;
+- durable per-document JSON sidecars stored in application data;
+- fallback source restoration when PDF text-item boundaries shift;
+- visible **Translate / Explain / Ask** modes, still deliberately non-generative;
+- persistent Light/Dark mode;
+- visible **LOCAL ONLY** state;
+- Windows NSIS packaging with CI-generated SHA-256 installer manifest.
+
+There is still **no AI model, OCR or runtime internet verification path** in v0.0.2.
 
 ## Product principles
 
@@ -34,11 +39,11 @@ The point is to prove the product shell, packaging boundary, source anchoring an
 
 ## Development policy
 
-`PROJECT_MANDATE.md` is the standing execution mandate for AI-assisted development. `PRODUCT_SPEC.md` and `ARCHITECTURE.md` are the product and engineering sources of truth.
+`PROJECT_MANDATE.md` is the standing execution mandate for AI-assisted development. `PRODUCT_SPEC.md`, `ARCHITECTURE.md`, `ROADMAP.md` and `RELEASE_CHECKLIST.md` are project sources of truth.
 
 ## Status
 
-This repository is at the product-shell stage. Do not use it for clinical decisions, safety-critical instructions or authoritative translation yet.
+This repository is in the provenance-hardening stage. Do not use it for clinical decisions, safety-critical instructions or authoritative translation yet.
 
 ## License
 
