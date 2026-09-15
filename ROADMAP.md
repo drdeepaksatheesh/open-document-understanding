@@ -2,34 +2,40 @@
 
 This roadmap is intentionally milestone-based rather than date-based. Each milestone should produce something testable and closer to a distributable application.
 
-## v0.0.1 — Product shell
+## v0.0.1 — Product shell ✅
 
 Goal: prove the application boundary before adding AI complexity.
+
+Completed and clean-machine validated on Windows:
 
 - Tauri 2 desktop shell;
 - React/TypeScript UI;
 - open local selectable-text PDF;
 - PDF rendering with text selection;
 - source side panel;
-- Translate / Explain / Ask controls present but allowed to be stubbed;
+- Translate / Explain / Ask controls present but stubbed;
 - local/network status indicator;
 - basic settings storage;
 - CI build workflow;
-- Windows packaging path;
-- synthetic test documents.
+- Windows NSIS packaging;
+- synthetic smoke-test document.
 
-Exit criterion: the application can be installed on a second Windows machine, opens a PDF, and records a stable source selection.
+## v0.0.2 — Robust source anchoring and release hardening (current)
 
-## v0.0.2 — Robust source anchoring
-
+- SHA-256 document identity;
+- SHA-256 normalized quote identity;
 - page/selection anchoring;
-- normalized source hashes;
+- fallback source-text range recovery if PDF text-item boundaries shift;
 - jump back to source;
-- selection persistence;
-- sidecar schema;
-- regression tests for source anchoring.
+- durable per-document JSON sidecars in application data storage;
+- versioned sidecar schema for future Translate / Explain / Ask provenance;
+- regression tests for hash stability, range recovery and sidecar records;
+- persistent Light/Dark mode;
+- cross-file version consistency checks;
+- validated Windows installer checksum manifest;
+- release-validation checklist.
 
-Exit criterion: a stored answer/annotation can reliably return the user to the exact source context after reopening the document.
+Exit criterion: a stored source/provenance record survives application restart, reopens against the same SHA-256-identified PDF, reliably restores/highlights its source context, and the v0.0.2 Windows installer passes the documented clean-machine validation including persistent dark mode.
 
 ## v0.1 — First local understanding loop
 
