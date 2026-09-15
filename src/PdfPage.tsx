@@ -44,13 +44,26 @@ export function PdfPage({ page, pageNumber, scale, documentFingerprint, activeAn
     canvas.style.height = `${viewport.height}px`;
 
     const renderTask = page.render({
+      canvas,
       canvasContext: context,
       viewport,
       transform: outputScale === 1 ? undefined : [outputScale, 0, 0, outputScale, 0, 0]
     });
 
     void page.getTextContent().then((content) => {
-      setItems(content.items.filter((item): item is TextItemLike => "str" in item));
+      const nextItems: TextItemLike[] = content.items.flatMap((item) =>
+        "str" in item
+          ? [
+              {
+                str: item.str,
+                transform: item.transform,
+                width: item.width,
+                height: item.height
+              }
+            ]
+          : []
+      );
+      setItems(nextItems);
     });
 
     return () => renderTask.cancel();
