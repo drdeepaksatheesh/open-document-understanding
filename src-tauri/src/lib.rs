@@ -3,6 +3,7 @@ use sha2::{Digest, Sha256};
 use std::{
     fs,
     io::Read,
+    panic::{catch_unwind, AssertUnwindSafe},
     path::{Component, Path, PathBuf},
 };
 use tauri::Manager;
@@ -78,7 +79,8 @@ fn safe_relative_path(value: &str) -> Result<PathBuf, String> {
 }
 
 fn sha256_file(path: &Path) -> Result<String, String> {
-    let mut file = fs::File::open(path).map_err(|error| format!("Cannot open model-pack file {}: {error}", path.display()))?;
+    let mut file = fs::File::open(path)
+        .map_err(|error| format!("Cannot open model-pack file {}: {error}", path.display()))?;
     let mut hasher = Sha256::new();
     let mut buffer = [0_u8; 1024 * 1024];
     loop {
@@ -95,15 +97,18 @@ fn sha256_file(path: &Path) -> Result<String, String> {
 
 fn read_model_manifest(directory: &Path) -> Result<ModelPackManifest, String> {
     let path = directory.join("manifest.json");
-    let metadata = fs::metadata(&path).map_err(|error| format!("Cannot inspect model-pack manifest: {error}"))?;
+    let metadata = fs::metadata(&path)
+        .map_err(|error| format!("Cannot inspect model-pack manifest: {error}"))?;
     if !metadata.is_file() {
         return Err("Model-pack manifest is not a regular file.".into());
     }
     if metadata.len() > MAX_MODEL_MANIFEST_BYTES {
         return Err("Model-pack manifest exceeds the 1 MB safety limit.".into());
     }
-    let contents = fs::read_to_string(&path).map_err(|error| format!("Cannot read model-pack manifest: {error}"))?;
-    serde_json::from_str(&contents).map_err(|error| format!("Invalid model-pack manifest JSON: {error}"))
+    let contents = fs::read_to_string(&path)
+        .map_err(|error| format!("Cannot read model-pack manifest: {error}"))?;
+    serde_json::from_str(&contents)
+        .map_err(|error| format!("Invalid model-pack manifest JSON: {error}"))
 }
 
 fn validate_model_pack(directory: &Path) -> Result<ModelPackManifest, String> {
@@ -132,7 +137,8 @@ fn validate_model_pack(directory: &Path) -> Result<ModelPackManifest, String> {
         return Err("Model pack must declare a license and at least one file.".into());
     }
 
-    let canonical_root = fs::canonicalize(directory).map_err(|error| format!("Cannot resolve model-pack directory: {error}"))?;
+    let canonical_root = fs::canonicalize(directory)
+        .map_err(|error| format!("Cannot resolve model-pack directory: {error}"))?;
     let mut seen = std::collections::HashSet::new();
     for file in &manifest.files {
         if !valid_sha256(&file.sha256) {
@@ -143,11 +149,13 @@ fn validate_model_pack(directory: &Path) -> Result<ModelPackManifest, String> {
             return Err(format!("Duplicate model-pack file path: {}", file.path));
         }
         let candidate = directory.join(&relative);
-        let metadata = fs::metadata(&candidate).map_err(|error| format!("Cannot inspect model-pack file {}: {error}", file.path))?;
+        let metadata = fs::metadata(&candidate)
+            .map_err(|error| format!("Cannot inspect model-pack file {}: {error}", file.path))?;
         if !metadata.is_file() {
             return Err(format!("Model-pack entry is not a regular file: {}", file.path));
         }
-        let canonical_file = fs::canonicalize(&candidate).map_err(|error| format!("Cannot resolve model-pack file {}: {error}", file.path))?;
+        let canonical_file = fs::canonicalize(&candidate)
+            .map_err(|error| format!("Cannot resolve model-pack file {}: {error}", file.path))?;
         if !canonical_file.starts_with(&canonical_root) {
             return Err(format!("Model-pack file escapes its root: {}", file.path));
         }
@@ -176,13 +184,19 @@ fn discover_model_packs(app: tauri::AppHandle) -> Result<String, String> {
     }
 
     let mut manifests = Vec::new();
-    for pack_entry in fs::read_dir(&root).map_err(|error| format!("Cannot scan model directory: {error}"))? {
-        let pack_entry = pack_entry.map_err(|error| format!("Cannot read model directory entry: {error}"))?;
+    for pack_entry in fs::read_dir(&root)
+        .map_err(|error| format!("Cannot scan model directory: {error}"))?
+    {
+        let pack_entry =
+            pack_entry.map_err(|error| format!("Cannot read model directory entry: {error}"))?;
         if !pack_entry.path().is_dir() {
             continue;
         }
-        for version_entry in fs::read_dir(pack_entry.path()).map_err(|error| format!("Cannot scan model-pack versions: {error}"))? {
-            let version_entry = version_entry.map_err(|error| format!("Cannot read model-pack version entry: {error}"))?;
+        for version_entry in fs::read_dir(pack_entry.path())
+            .map_err(|error| format!("Cannot scan model-pack versions: {error}"))?
+        {
+            let version_entry = version_entry
+                .map_err(|error| format!("Cannot read model-pack version entry: {error}"))?;
             if version_entry.path().is_dir() {
                 if let Ok(manifest) = validate_model_pack(&version_entry.path()) {
                     manifests.push(manifest);
@@ -191,47 +205,77 @@ fn discover_model_packs(app: tauri::AppHandle) -> Result<String, String> {
         }
     }
 
-    serde_json::to_string(&manifests).map_err(|error| format!("Cannot serialize model-pack list: {error}"))
+    serde_json::to_string(&manifests)
+        .map_err(|error| format!("Cannot serialize model-pack list: {error}"))
 }
 
-#[tauri::command]
-fn import_model_pack(app: tauri::AppHandle, source_directory: String) -> Result<String, String> {
-    let source = Path::new(&source_directory);
+fn import_model_pack_inner(source_directory: &str, root: &Path) -> Result<String, String> {
+    let source = Path::new(source_directory);
     if !source.is_dir() {
         return Err("Select a model-pack directory containing manifest.json.".into());
     }
+
     let manifest = validate_model_pack(source)?;
-    let root = models_root(&app)?;
-    fs::create_dir_all(&root).map_err(|error| format!("Cannot create models directory: {error}"))?;
+    fs::create_dir_all(root).map_err(|error| format!("Cannot create models directory: {error}"))?;
     let target = root.join(&manifest.pack_id).join(&manifest.pack_version);
     let temporary = root
         .join(&manifest.pack_id)
         .join(format!("{}.importing", manifest.pack_version));
 
     if temporary.exists() {
-        fs::remove_dir_all(&temporary).map_err(|error| format!("Cannot clear incomplete model-pack import: {error}"))?;
+        fs::remove_dir_all(&temporary)
+            .map_err(|error| format!("Cannot clear incomplete model-pack import: {error}"))?;
     }
-    fs::create_dir_all(&temporary).map_err(|error| format!("Cannot create model-pack import directory: {error}"))?;
-    fs::copy(source.join("manifest.json"), temporary.join("manifest.json"))
-        .map_err(|error| format!("Cannot copy model-pack manifest: {error}"))?;
 
-    for file in &manifest.files {
-        let relative = safe_relative_path(&file.path)?;
-        let destination = temporary.join(&relative);
-        if let Some(parent) = destination.parent() {
-            fs::create_dir_all(parent).map_err(|error| format!("Cannot create model-pack subdirectory: {error}"))?;
+    let result = (|| -> Result<String, String> {
+        fs::create_dir_all(&temporary)
+            .map_err(|error| format!("Cannot create model-pack import directory: {error}"))?;
+        fs::copy(source.join("manifest.json"), temporary.join("manifest.json"))
+            .map_err(|error| format!("Cannot copy model-pack manifest: {error}"))?;
+
+        for file in &manifest.files {
+            let relative = safe_relative_path(&file.path)?;
+            let destination = temporary.join(&relative);
+            if let Some(parent) = destination.parent() {
+                fs::create_dir_all(parent)
+                    .map_err(|error| format!("Cannot create model-pack subdirectory: {error}"))?;
+            }
+            fs::copy(source.join(&relative), &destination)
+                .map_err(|error| format!("Cannot copy model-pack file {}: {error}", file.path))?;
         }
-        fs::copy(source.join(&relative), &destination)
-            .map_err(|error| format!("Cannot copy model-pack file {}: {error}", file.path))?;
-    }
 
-    validate_model_pack(&temporary)?;
-    if target.exists() {
-        fs::remove_dir_all(&target).map_err(|error| format!("Cannot replace installed model pack: {error}"))?;
+        validate_model_pack(&temporary)?;
+        if target.exists() {
+            fs::remove_dir_all(&target)
+                .map_err(|error| format!("Cannot replace installed model pack: {error}"))?;
+        }
+        fs::rename(&temporary, &target)
+            .map_err(|error| format!("Cannot finalize model-pack import: {error}"))?;
+        let installed = validate_model_pack(&target)?;
+        serde_json::to_string(&installed)
+            .map_err(|error| format!("Cannot serialize installed model-pack manifest: {error}"))
+    })();
+
+    if result.is_err() && temporary.exists() {
+        let _ = fs::remove_dir_all(&temporary);
     }
-    fs::rename(&temporary, &target).map_err(|error| format!("Cannot finalize model-pack import: {error}"))?;
-    let installed = validate_model_pack(&target)?;
-    serde_json::to_string(&installed).map_err(|error| format!("Cannot serialize installed model-pack manifest: {error}"))
+    result
+}
+
+#[tauri::command]
+async fn import_model_pack(app: tauri::AppHandle, source_directory: String) -> Result<String, String> {
+    let root = models_root(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        match catch_unwind(AssertUnwindSafe(|| import_model_pack_inner(&source_directory, &root))) {
+            Ok(result) => result,
+            Err(_) => Err(
+                "Model-pack import hit an internal validation error. Nothing was installed; please report this build and the selected pack."
+                    .into(),
+            ),
+        }
+    })
+    .await
+    .map_err(|error| format!("Model-pack validation worker failed: {error}"))?
 }
 
 #[tauri::command]
@@ -314,6 +358,29 @@ fn save_sidecar(
     }
     fs::rename(temporary, path).map_err(|error| format!("Cannot finalize sidecar: {error}"))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn safe_relative_path_accepts_nested_pack_file() {
+        assert_eq!(
+            safe_relative_path("runtime/odu-translate.exe").unwrap(),
+            PathBuf::from("runtime").join("odu-translate.exe")
+        );
+    }
+
+    #[test]
+    fn safe_relative_path_rejects_parent_traversal() {
+        assert!(safe_relative_path("../escape.bin").is_err());
+    }
+
+    #[test]
+    fn safe_relative_path_rejects_drive_prefix() {
+        assert!(safe_relative_path("C:/escape.bin").is_err());
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
