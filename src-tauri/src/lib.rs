@@ -176,37 +176,64 @@ fn models_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
         .join("models"))
 }
 
-#[tauri::command]
-fn discover_model_packs(app: tauri::AppHandle) -> Result<String, String> {
-    let root = models_root(&app)?;
+fn discover_model_packs_inner(root: &Path) -> Result<String, String> {
     if !root.exists() {
         return Ok("[]".into());
     }
 
     let mut manifests = Vec::new();
-    for pack_entry in fs::read_dir(&root)
+    for pack_entry in fs::read_dir(root)
         .map_err(|error| format!("Cannot scan model directory: {error}"))?
     {
-        let pack_entry =
-            pack_entry.map_err(|error| format!("Cannot read model directory entry: {error}"))?;
+        let pack_entry = match pack_entry {
+            Ok(entry) => entry,
+            Err(_) => continue,
+        };
         if !pack_entry.path().is_dir() {
             continue;
         }
-        for version_entry in fs::read_dir(pack_entry.path())
-            .map_err(|error| format!("Cannot scan model-pack versions: {error}"))?
-        {
-            let version_entry = version_entry
-                .map_err(|error| format!("Cannot read model-pack version entry: {error}"))?;
-            if version_entry.path().is_dir() {
-                if let Ok(manifest) = validate_model_pack(&version_entry.path()) {
-                    manifests.push(manifest);
-                }
+
+        let versions = match fs::read_dir(pack_entry.path()) {
+            Ok(entries) => entries,
+            Err(_) => continue,
+        };
+        for version_entry in versions {
+            let version_entry = match version_entry {
+                Ok(entry) => entry,
+                Err(_) => continue,
+            };
+            if !version_entry.path().is_dir() {
+                continue;
+            }
+            let version_name = version_entry.file_name();
+            let version_name = version_name.to_string_lossy();
+            if version_name.ends_with(".importing") || version_name.ends_with(".disabled") {
+                continue;
+            }
+            if let Ok(manifest) = validate_model_pack(&version_entry.path()) {
+                manifests.push(manifest);
             }
         }
     }
 
     serde_json::to_string(&manifests)
         .map_err(|error| format!("Cannot serialize model-pack list: {error}"))
+}
+
+#[tauri::command]
+async fn discover_model_packs(app: tauri::AppHandle) -> Result<String, String> {
+    let root = models_root(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        match catch_unwind(AssertUnwindSafe(|| discover_model_packs_inner(&root))) {
+            Ok(result) => result,
+            Err(_) => Err(
+                "Model-pack discovery hit an internal validation error. Installed packs were left untouched."
+                    .into(),
+            ),
+        }
+    })
+    .await
+    .map_err(|error| format!("Model-pack discovery worker failed: {error}"))?
 }
 
 fn import_model_pack_inner(source_directory: &str, root: &Path) -> Result<String, String> {
@@ -380,6 +407,23 @@ mod tests {
     #[test]
     fn safe_relative_path_rejects_drive_prefix() {
         assert!(safe_relative_path("C:/escape.bin").is_err());
+    }
+
+    #[test]
+    fn discovery_ignores_incomplete_import_directories() {
+        let root = std::env::temp_dir().join(format!(
+            "odu-discovery-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let incomplete = root.join("fixture-pack").join("0.0.1.importing");
+        fs::create_dir_all(&incomplete).unwrap();
+        fs::write(incomplete.join("manifest.json"), "not json").unwrap();
+        assert_eq!(discover_model_packs_inner(&root).unwrap(), "[]");
+        let _ = fs::remove_dir_all(root);
     }
 }
 
