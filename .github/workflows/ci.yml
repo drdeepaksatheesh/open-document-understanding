@@ -47,6 +47,9 @@ jobs:
         run: npm install --ignore-scripts
       - name: Version consistency
         run: npm run check:version
+      - name: Rust unit tests
+        working-directory: src-tauri
+        run: cargo test --lib
       - name: Build NSIS installer
         run: npm run tauri build -- --bundles nsis
       - name: Validate installer and write checksum
