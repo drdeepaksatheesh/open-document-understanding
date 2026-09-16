@@ -1,6 +1,6 @@
 [package]
 name = "open-document-understanding"
-version = "0.1.0-alpha.4"
+version = "0.1.0-alpha.5"
 description = "Privacy-first local document understanding reader"
 authors = ["Open Document Understanding contributors"]
 edition = "2021"
