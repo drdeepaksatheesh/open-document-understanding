@@ -72,3 +72,10 @@ This repository is in the offline-model integration stage. Do not use it for cli
 ## License
 
 Apache-2.0 for the application source code. Model weights, terminology packs and datasets may carry their own compatible licenses and are documented separately.
+
+
+## Shared open research principles
+
+This project follows the account-wide [Open Research Charter](https://github.com/drdeepaksatheesh/drdeepaksatheesh.github.io/blob/main/OPEN_RESEARCH_CHARTER.md): **open-source, decentralized, reliable, reproducible**.
+
+For this repository that means local-first document handling, explicit provenance, replaceable models, evidence-backed release claims, and enough version/build information for another user to reproduce a released result.
